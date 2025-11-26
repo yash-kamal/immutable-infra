@@ -1,0 +1,22 @@
+{
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "ap-south-1",
+      "source_ami": "ami-0f5ee92e2d63afc18",
+      "instance_type": "t2.micro",
+      "ssh_username": "ubuntu",
+      "ami_name": "immutable-image-{{timestamp}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt update",
+        "sudo apt install -y nginx",
+        "echo 'Deployed Immutable Infrastructure' | sudo tee /var/www/html/index.html"
+      ]
+    }
+  ]
+}
