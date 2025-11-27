@@ -1,0 +1,42 @@
+name: Build AMI
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  packer-build:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build AMI with packer
+        run: |
+          packer build -var "aws_region=${{ env.AWS_REGION }}" packer/app.json \
+            | tee packer_output.log
+
+      - name: Extract AMI ID
+        run: |
+          AMI=$(grep -oP 'AMI: \(ami-[0-9a-fA-F]+' packer_output.log | awk -F': ' '{print $2}' | tail -1)
+          echo "ami=$AMI" >> $GITHUB_OUTPUT
+        id: get_ami
+
+      - name: Upload AMI ID artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ami-id
+          path: packer_output.log
