@@ -1,0 +1,51 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ami:
+        description: 'AMI ID to deploy'
+        required: true
+        default: ''
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init -input=false
+
+      - name: Terraform plan & apply (update AMI + create/scale green)
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve -var "app_ami=${{ github.event.inputs.ami }}" -var "environment=prod"
+
+      - name: Get outputs
+        working-directory: terraform
+        run: |
+          terraform output -json > /tmp/tf_output.json
+          cat /tmp/tf_output.json
+
+      - name: Run deploy script (canary then cutover)
+        run: |
+          LISTENER_ARN=$(jq -r '.listener_arn.value' /tmp/tf_output.json)
+          TG_GREEN_ARN=$(jq -r '.tg_green_arn.value' /tmp/tf_output.json)
+          TG_BLUE_ARN=$(jq -r '.tg_blue_arn.value' /tmp/tf_output.json)
+          ALB_DNS=$(jq -r '.alb_dns.value' /tmp/tf_output.json)
+          ./scripts/deploy.sh "$LISTENER_ARN" "$TG_GREEN_ARN" "$TG_BLUE_ARN" "$ALB_DNS" 2 10
